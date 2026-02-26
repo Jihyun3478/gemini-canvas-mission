@@ -1,9 +1,9 @@
 ## 📚 학습 앱
 ### 앱 이름
-DB 마스터
+### **DB 마스터**
 
 ### 배포 링크
-https://gemini.google.com/share/c68ad482417a
+[DB 마스터 바로가기!](https://gemini.google.com/share/c68ad482417a)
 
 ### 이 앱을 만든 이유
 - 어떤 문제/불편함을 해결하려고 했나요?
