@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DB 마스터</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+    <style>
+        :root {
+            --toss-blue: #3182F6;
+            --toss-blue-hover: #1b64da;
+            --toss-bg: #F2F4F6;
+            --toss-surface: #FFFFFF;
+            --toss-text: #191F28;
+            --toss-text-secondary: #8B95A1;
+            --toss-green: #34C759;
+            --toss-red: #FF3B30;
+        }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: var(--toss-bg);
+            color: var(--toss-text);
+            overflow-x: hidden;
+            user-select: none;
+        }
+
+        /* Animations */
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes bounceGlow {
+            0%, 100% { box-shadow: 0 0 10px rgba(49, 130, 246, 0.4); transform: translateY(0); }
+            50% { box-shadow: 0 0 20px rgba(49, 130, 246, 0.8); transform: translateY(-5px); }
+        }
+
+        .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        .animate-pop-in { animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        .island-active { animation: bounceGlow 2s infinite; border: 4px solid var(--toss-blue); }
+        .island-locked { filter: grayscale(100%); opacity: 0.6; }
+        
+        /* Bottom Sheet */
+        .bottom-sheet-backdrop {
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(2px);
+        }
+        .bottom-sheet {
+            border-radius: 24px 24px 0 0;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+        }
+
+        /* Option Button */
+        .option-btn {
+            transition: all 0.2s ease;
+        }
+        .option-btn:active {
+            transform: scale(0.97);
+        }
+        .option-btn.selected {
+            background-color: #E8F3FF;
+            border-color: var(--toss-blue);
+            color: var(--toss-blue);
+        }
+        .option-btn.correct {
+            background-color: #E6F4EA;
+            border-color: var(--toss-green);
+            color: #137333;
+        }
+        .option-btn.wrong {
+            background-color: #FCE8E6;
+            border-color: var(--toss-red);
+            color: #C5221F;
+        }
+
+        /* Map Path */
+        .path-line {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            transition: stroke-dashoffset 1.5s ease-in-out;
+        }
+
+        /* Infographic Elements */
+        .info-table { border: 2px solid #E5E8EB; border-radius: 8px; overflow: hidden; }
+        .info-cell { padding: 4px 8px; border: 1px solid #E5E8EB; text-align: center; font-size: 12px; }
+        .info-header { background: #F2F4F6; font-weight: bold; }
+        .highlight-row { background: #E8F3FF; }
+        .venn-circle { width: 80px; height: 80px; border-radius: 50%; position: absolute; opacity: 0.7; mix-blend-mode: multiply; }
+
+        /* Badge Glow */
+        .badge-glow {
+            background: radial-gradient(circle, rgba(255,215,0,0.6) 0%, rgba(255,215,0,0) 70%);
+            animation: spinGlow 4s linear infinite;
+        }
+        @keyframes spinGlow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex justify-center bg-gray-100 overflow-hidden">
+
+    <!-- Mobile Container -->
+    <div id="app-container" class="relative w-full max-w-md h-full bg-white shadow-2xl overflow-hidden flex flex-col">
+        
+        <!-- 1. Map Screen -->
+        <div id="screen-map" class="absolute inset-0 flex flex-col z-10 bg-[#F2F4F6] overflow-y-auto">
+            <div class="px-6 pt-12 pb-6 bg-white rounded-b-3xl shadow-sm z-20">
+                <h1 class="text-3xl font-extrabold text-[#191F28] tracking-tight">DB 마스터</h1>
+                <p class="text-[#8B95A1] mt-2 font-medium">데이터베이스 정복을 위한 여정</p>
+                <div class="mt-4 flex items-center bg-[#F2F4F6] rounded-xl p-3">
+                    <div class="flex-1">
+                        <div class="text-sm font-bold text-[#191F28]">나의 진행도</div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div id="progress-bar-overall" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="ml-4 font-bold text-blue-500" id="progress-text">0%</div>
+                </div>
+            </div>
+
+            <div class="relative flex-1 py-12 px-4 flex flex-col items-center justify-between min-h-[600px]">
+                <!-- Path SVG -->
+                <svg class="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <path id="map-path" class="path-line" d="M50 90 Q 20 75 50 50 T 50 10" fill="none" stroke="#E5E8EB" stroke-width="2" stroke-linecap="round"/>
+                    <path id="map-path-active" class="path-line" d="M50 90 Q 20 75 50 50 T 50 10" fill="none" stroke="#3182F6" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+
+                <!-- Islands (Rendered via JS) -->
+                <div id="islands-container" class="w-full h-full flex flex-col-reverse items-center justify-between relative z-10 pb-8 pt-8">
+                    <!-- Island elements will be injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. Quiz Screen -->
+        <div id="screen-quiz" class="absolute inset-0 flex flex-col z-20 bg-white hidden">
+            <!-- Header -->
+            <div class="flex items-center justify-between p-4 border-b border-gray-100">
+                <button onclick="returnToMap()" class="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <div class="font-bold text-[#191F28]" id="quiz-stage-title">1단계: 입문</div>
+                <div class="w-10"></div>
+            </div>
+
+            <!-- Progress -->
+            <div class="px-6 py-4">
+                <div class="flex justify-between text-sm font-bold text-[#8B95A1] mb-2">
+                    <span id="quiz-progress-text">문제 1 / 10</span>
+                    <span id="quiz-score-text" class="text-blue-500">맞춘 개수: 0</span>
+                </div>
+                <div class="w-full bg-gray-100 rounded-full h-2">
+                    <div id="quiz-progress-bar" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 10%"></div>
+                </div>
+            </div>
+
+            <!-- Question -->
+            <div class="px-6 py-4 flex-1 overflow-y-auto">
+                <div class="bg-[#F9FAFB] p-5 rounded-2xl mb-6">
+                    <h2 id="question-text" class="text-xl font-bold text-[#191F28] leading-snug break-keep">
+                        <!-- Question goes here -->
+                    </h2>
+                </div>
+
+                <!-- Options -->
+                <div id="options-container" class="flex flex-col gap-3">
+                    <!-- Options injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Result Screen -->
+        <div id="screen-result" class="absolute inset-0 flex flex-col z-30 bg-white hidden items-center justify-center p-6 text-center">
+            <div id="result-icon" class="text-7xl mb-4 animate-pop-in">🎉</div>
+            <h2 id="result-title" class="text-3xl font-extrabold text-[#191F28] mb-2">클리어 성공!</h2>
+            <p id="result-desc" class="text-[#8B95A1] text-lg mb-8">8개 이상 맞혀 다음 섬이 열렸습니다.</p>
+            
+            <div class="bg-[#F2F4F6] rounded-3xl p-6 w-full max-w-xs mb-8">
+                <div class="text-sm font-bold text-[#8B95A1] mb-1">최종 점수</div>
+                <div class="text-5xl font-extrabold text-blue-500" id="result-score">8<span class="text-2xl text-gray-400">/10</span></div>
+            </div>
+
+            <button onclick="returnToMap()" id="result-btn" class="w-full py-4 bg-blue-500 text-white rounded-2xl font-bold text-lg hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/30">
+                지도에서 확인하기
+            </button>
+        </div>
+
+        <!-- 4. Final Badge Screen -->
+        <div id="screen-badge" class="absolute inset-0 flex flex-col z-40 bg-[#191F28] hidden items-center justify-center p-6 text-center overflow-hidden">
+            <div class="absolute inset-0 badge-glow opacity-30"></div>
+            
+            <div class="relative z-10 flex flex-col items-center animate-slide-up">
+                <h2 class="text-3xl font-extrabold text-white mb-2">모든 관문 통과!</h2>
+                <p class="text-[#8B95A1] text-lg mb-10">당신의 열정과 노력에 박수를 보냅니다.</p>
+
+                <div class="relative w-48 h-48 mb-10 animate-pop-in flex items-center justify-center">
+                    <!-- Medal SVG -->
+                    <svg viewBox="0 0 200 200" class="w-full h-full drop-shadow-2xl">
+                        <circle cx="100" cy="100" r="90" fill="#FFD700" stroke="#F5B041" stroke-width="8"/>
+                        <circle cx="100" cy="100" r="75" fill="#FFC300"/>
+                        <!-- Ribbons -->
+                        <path d="M 50 170 L 30 250 L 70 230 L 100 250 L 80 170 Z" fill="#E74C3C"/>
+                        <path d="M 150 170 L 170 250 L 130 230 L 100 250 L 120 170 Z" fill="#C0392B"/>
+                        <!-- Inner details -->
+                        <path d="M 50 100 A 50 50 0 1 1 150 100 A 50 50 0 1 1 50 100 Z" fill="none" stroke="#F39C12" stroke-width="4" stroke-dasharray="10 5"/>
+                        <text x="50%" y="45%" dominant-baseline="middle" text-anchor="middle" font-family="Pretendard" font-weight="900" font-size="28" fill="#B9770E">DB</text>
+                        <text x="50%" y="65%" dominant-baseline="middle" text-anchor="middle" font-family="Pretendard" font-weight="900" font-size="24" fill="#B9770E">마스터</text>
+                    </svg>
+                </div>
+
+                <div class="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 text-white text-sm leading-relaxed mb-8">
+                    DBMS 기초부터 JOIN, 정규화, 인덱스와 트랜잭션까지.<br>
+                    데이터베이스의 핵심을 모두 마스터하셨습니다.<br>
+                    이제 훌륭한 백엔드/DBA 전문가로 성장하세요!
+                </div>
+
+                <button onclick="resetGame()" class="px-8 py-4 bg-white text-[#191F28] rounded-2xl font-bold text-lg hover:bg-gray-100 transition-colors shadow-lg">
+                    처음부터 다시하기
+                </button>
+            </div>
+        </div>
+
+        <!-- Explanation Bottom Sheet (Infographic) -->
+        <div id="explanation-modal" class="absolute inset-0 z-50 hidden flex-col justify-end">
+            <div class="absolute inset-0 bottom-sheet-backdrop" onclick="nextQuestion()"></div>
+            <div class="bottom-sheet bg-white w-full h-[75%] relative flex flex-col animate-slide-up">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mt-3 mb-2"></div>
+                
+                <div class="p-6 flex-1 overflow-y-auto">
+                    <div class="flex items-center text-green-500 font-bold text-lg mb-4">
+                        <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        정답입니다!
+                    </div>
+                    
+                    <h3 class="text-xl font-bold text-[#191F28] mb-4" id="exp-title">개념 시각화</h3>
+                    
+                    <!-- Infographic Box -->
+                    <div class="bg-[#F2F4F6] rounded-2xl p-6 mb-6 flex items-center justify-center min-h-[200px]" id="infographic-container">
+                        <!-- Dynamic Visual injected here based on category -->
+                    </div>
+
+                    <div class="bg-[#F9FAFB] border border-gray-100 rounded-2xl p-5">
+                        <p class="text-[#333D4B] leading-relaxed break-keep font-medium" id="exp-text">
+                            설명이 여기에 들어갑니다.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="p-6 border-t border-gray-100 bg-white">
+                    <button onclick="nextQuestion()" class="w-full py-4 bg-blue-500 text-white rounded-2xl font-bold text-lg hover:bg-blue-600 transition-colors">
+                        다음 문제로
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- 1. Quiz Data Definition ---
+        const stagesData = [
+            {
+                id: 1,
+                title: "1단계: 입문",
+                desc: "데이터베이스 기초 및 SQL 문법",
+                color: "bg-blue-100 text-blue-600",
+                icon: "🌱",
+                questions: [
+                    {
+                        q: "데이터베이스(DB)와 데이터베이스 관리 시스템(DBMS)의 차이로 가장 올바른 것은?",
+                        options: [
+                            "DB는 데이터를 저장하는 물리적 디스크이고, DBMS는 메모리이다.",
+                            "DB는 저장된 데이터의 집합이며, DBMS는 이 데이터를 관리하고 운영하는 소프트웨어이다.",
+                            "DB는 관계형 데이터를, DBMS는 비관계형 데이터를 의미한다.",
+                            "두 용어는 완전히 동일한 의미로 사용된다."
+                        ],
+                        answer: 1,
+                        category: "dbms",
+                        explanation: "DB(Database)는 유용한 데이터의 집합 자체를 의미하며, DBMS(Database Management System)는 사용자가 DB를 생성하고 관리할 수 있도록 도와주는 소프트웨어(예: MySQL, Oracle)입니다."
+                    },
+                    {
+                        q: "다음 중 관계형 데이터베이스(RDBMS)의 특징이 아닌 것은?",
+                        options: [
+                            "데이터를 테이블(Table) 형태로 행과 열로 저장한다.",
+                            "SQL(Structured Query Language)을 사용하여 데이터를 조작한다.",
+                            "데이터의 스키마(Schema)가 고정되어 있지 않아 자유롭다.",
+                            "데이터 무결성 유지를 위해 트랜잭션의 ACID 속성을 보장한다."
+                        ],
+                        answer: 2,
+                        category: "rdbms",
+                        explanation: "스키마가 고정되어 있지 않고 유연한 구조를 가지는 것은 NoSQL의 주요 특징입니다. RDBMS는 명확히 정의된 스키마(Schema)를 따릅니다."
+                    },
+                    {
+                        q: "테이블에서 특정 조건에 맞는 데이터를 조회할 때 사용하는 SQL 구문은?",
+                        options: ["SELECT", "INSERT", "UPDATE", "DELETE"],
+                        answer: 0,
+                        category: "select",
+                        explanation: "데이터를 조회할 때는 SELECT 문을 사용합니다. 구조: SELECT 컬럼 FROM 테이블 WHERE 조건;"
+                    },
+                    {
+                        q: "사용자 테이블(Users)에서 나이가 20살 이상인 사람의 이름(Name)을 조회하는 쿼리로 올바른 것은?",
+                        options: [
+                            "SELECT Name FROM Users HAVING Age >= 20;",
+                            "SELECT Name FROM Users WHERE Age >= 20;",
+                            "FIND Name IN Users IF Age >= 20;",
+                            "SEARCH Name FROM Users WHERE Age >= 20;"
+                        ],
+                        answer: 1,
+                        category: "select",
+                        explanation: "조건을 지정할 때는 WHERE 절을 사용해야 합니다. HAVING은 주로 GROUP BY로 그룹화된 결과에 조건을 줄 때 사용합니다."
+                    },
+                    {
+                        q: "조회된 데이터의 결과를 특정 컬럼 기준으로 정렬하고 싶을 때 사용하는 구문은?",
+                        options: ["GROUP BY", "ORDER BY", "SORT BY", "ALIGN BY"],
+                        answer: 1,
+                        category: "orderby",
+                        explanation: "ORDER BY 구문을 사용하여 오름차순(ASC) 또는 내림차순(DESC)으로 데이터를 정렬할 수 있습니다."
+                    },
+                    {
+                        q: "데이터베이스 테이블에 새로운 데이터를 삽입하기 위해 사용하는 DML 명령어는?",
+                        options: ["CREATE", "INSERT", "UPDATE", "ADD"],
+                        answer: 1,
+                        category: "insert",
+                        explanation: "새로운 행(Row)을 추가할 때는 INSERT 문을 사용합니다. CREATE는 테이블이나 데이터베이스 자체(객체)를 만들 때 사용하는 DDL입니다."
+                    },
+                    {
+                        q: "이미 저장된 데이터를 수정하려고 할 때 사용하는 명령어는?",
+                        options: ["CHANGE", "MODIFY", "UPDATE", "ALTER"],
+                        answer: 2,
+                        category: "update",
+                        explanation: "데이터(레코드)의 값을 변경할 때는 UPDATE 문을 사용합니다. ALTER는 테이블의 구조(스키마)를 변경할 때 사용합니다."
+                    },
+                    {
+                        q: "DELETE 문을 사용할 때 WHERE 절을 생략하면 어떤 일이 발생하는가?",
+                        options: [
+                            "문법 오류가 발생하여 실행되지 않는다.",
+                            "가장 최근에 추가된 데이터 1건만 삭제된다.",
+                            "테이블 자체(구조 포함)가 삭제된다.",
+                            "테이블의 모든 데이터(행)가 삭제된다."
+                        ],
+                        answer: 3,
+                        category: "delete",
+                        explanation: "DELETE 문에서 WHERE 조건절을 생략하면 해당 테이블의 모든 레코드가 삭제되므로 매우 주의해야 합니다. (테이블 구조는 남음)"
+                    },
+                    {
+                        q: "다음 중 DML(Data Manipulation Language)에 속하지 않는 명령어는?",
+                        options: ["INSERT", "UPDATE", "DELETE", "DROP"],
+                        answer: 3,
+                        category: "dml",
+                        explanation: "DROP은 데이터베이스 객체(테이블, 뷰 등)를 삭제하는 DDL(Data Definition Language)입니다. DML은 SELECT, INSERT, UPDATE, DELETE 입니다."
+                    },
+                    {
+                        q: "가장 대표적인 오픈소스 RDBMS로, 이 돌고래 모양의 로고를 사용하는 데이터베이스는?",
+                        options: ["Oracle", "MySQL", "MongoDB", "Redis"],
+                        answer: 1,
+                        category: "mysql",
+                        explanation: "MySQL은 돌고래(Sakila)를 로고로 사용하는 세계에서 가장 인기 있는 오픈소스 RDBMS입니다."
+                    }
+                ]
+            },
+            {
+                id: 2,
+                title: "2단계: 기본",
+                desc: "데이터 관계와 조인",
+                color: "bg-green-100 text-green-600",
+                icon: "🌿",
+                questions: [
+                    {
+                        q: "두 개 이상의 테이블을 공통된 컬럼을 기준으로 결합하여 조회하는 SQL 문법은?",
+                        options: ["MERGE", "UNION", "JOIN", "BIND"],
+                        answer: 2,
+                        category: "join",
+                        explanation: "JOIN은 관계형 데이터베이스에서 두 개 이상의 테이블을 연결하여 하나의 결과 집합으로 만드는 핵심 기능입니다."
+                    },
+                    {
+                        q: "조인(JOIN) 방식 중, 두 테이블 모두에 일치하는 데이터가 있는 경우에만 결과를 반환하는 것은?",
+                        options: ["LEFT OUTER JOIN", "INNER JOIN", "CROSS JOIN", "FULL OUTER JOIN"],
+                        answer: 1,
+                        category: "innerjoin",
+                        explanation: "INNER JOIN은 교집합과 같습니다. 조인 조건에 일치하는 행(Row)만 양쪽 테이블에서 가져와 결합합니다."
+                    },
+                    {
+                        q: "왼쪽 테이블의 모든 데이터를 포함하고, 오른쪽 테이블에 일치하는 데이터가 없으면 NULL로 채워 반환하는 조인은?",
+                        options: ["INNER JOIN", "LEFT OUTER JOIN", "RIGHT OUTER JOIN", "NATURAL JOIN"],
+                        answer: 1,
+                        category: "leftjoin",
+                        explanation: "LEFT OUTER JOIN은 기준이 되는 왼쪽 테이블의 데이터는 무조건 살리고, 일치하는 우측 테이블 데이터가 없으면 빈 칸(NULL)으로 둡니다."
+                    },
+                    {
+                        q: "여러 행의 데이터를 그룹화하여 합계, 평균 등의 통계를 내기 위해 사용하는 구문은?",
+                        options: ["GROUP BY", "ORDER BY", "PARTITION BY", "CLUSTER BY"],
+                        answer: 0,
+                        category: "groupby",
+                        explanation: "GROUP BY 절은 특정 컬럼을 기준으로 데이터를 그룹화합니다. 주로 SUM, AVG, COUNT 등의 집계 함수와 함께 사용됩니다."
+                    },
+                    {
+                        q: "GROUP BY로 그룹화된 결과에 대하여 조건을 걸어 필터링할 때 사용하는 구문은?",
+                        options: ["WHERE", "HAVING", "FILTER", "LIMIT"],
+                        answer: 1,
+                        category: "having",
+                        explanation: "WHERE 절은 그룹화하기 전에 개별 행을 필터링하고, HAVING 절은 그룹화가 완료된 후 집계 결과에 조건을 걸 때 사용합니다."
+                    },
+                    {
+                        q: "하나의 SQL 문 안에 포함되어 있는 또 다른 SQL 문을 무엇이라 부르는가?",
+                        options: ["서브쿼리 (Subquery)", "조인 (Join)", "프로시저 (Procedure)", "뷰 (View)"],
+                        answer: 0,
+                        category: "subquery",
+                        explanation: "서브쿼리는 메인 쿼리 내부에 작성된 쿼리로, 복잡한 로직을 해결하기 위해 괄호 () 안에 SELECT 문을 중첩하여 사용합니다."
+                    },
+                    {
+                        q: "자주 사용하는 복잡한 쿼리를 가상의 테이블로 만들어 재사용성을 높이는 데이터베이스 객체는?",
+                        options: ["Index (인덱스)", "View (뷰)", "Trigger (트리거)", "Cursor (커서)"],
+                        answer: 1,
+                        category: "view",
+                        explanation: "뷰(View)는 실제 데이터를 저장하지 않고 질의(Query)만 저장해 둔 가상의 테이블로, 보안 강화 및 쿼리 단순화를 위해 사용합니다."
+                    },
+                    {
+                        q: "SQL에서 조건에 따라 다른 값을 반환하도록 하는 조건문(IF-THEN-ELSE 역할)은?",
+                        options: ["CASE 문", "CHOOSE 문", "SWITCH 문", "EVAL 문"],
+                        answer: 0,
+                        category: "case",
+                        explanation: "CASE WHEN 조건 THEN 결과 ELSE 결과 END 형식을 사용하여 SQL 내에서 분기 처리를 할 수 있습니다."
+                    },
+                    {
+                        q: "테이블에서 각 행을 고유하게 식별할 수 있도록 보장하며, NULL 값을 가질 수 없는 제약조건은?",
+                        options: ["Foreign Key (외래키)", "Unique Key (고유키)", "Primary Key (기본키)", "Check (체크)"],
+                        answer: 2,
+                        category: "pk",
+                        explanation: "Primary Key(기본키)는 테이블의 각 레코드를 고유하게 식별하는 컬럼으로, 중복과 NULL을 허용하지 않습니다 (Entity 무결성)."
+                    },
+                    {
+                        q: "다른 테이블의 기본키(PK)를 참조하여 두 테이블 간의 관계를 맺어주는 제약조건은?",
+                        options: ["Primary Key", "Foreign Key", "Reference Key", "Relation Key"],
+                        answer: 1,
+                        category: "fk",
+                        explanation: "Foreign Key(외래키)는 다른 테이블의 레코드를 참조하기 위한 키로, 참조 무결성을 유지하는 역할을 합니다."
+                    }
+                ]
+            },
+            {
+                id: 3,
+                title: "3단계: 설계",
+                desc: "모델링 및 정규화",
+                color: "bg-purple-100 text-purple-600",
+                icon: "🏛️",
+                questions: [
+                    {
+                        q: "데이터베이스 설계 과정 중, 현실 세계의 요구사항을 추상화하여 ERD(개체-관계 다이어그램)를 그리는 단계는?",
+                        options: ["요구사항 분석", "개념적 설계", "논리적 설계", "물리적 설계"],
+                        answer: 1,
+                        category: "erd",
+                        explanation: "개념적 설계 단계에서는 요구사항을 바탕으로 DBMS에 독립적인 개념적 데이터 모델(예: ERD)을 작성합니다."
+                    },
+                    {
+                        q: "ERD에서 개체(Entity)를 표현할 때 주로 사용하는 도형은?",
+                        options: ["원 (Circle)", "마름모 (Rhombus)", "사각형 (Rectangle)", "삼각형 (Triangle)"],
+                        answer: 2,
+                        category: "erd_shape",
+                        explanation: "ERD(Entity-Relationship Diagram)에서 개체(Entity)는 사각형, 관계(Relationship)는 마름모, 속성(Attribute)은 타원으로 표현합니다."
+                    },
+                    {
+                        q: "데이터베이스의 이상(Anomaly) 현상을 방지하고 데이터 중복을 최소화하기 위해 테이블을 분해하는 과정은?",
+                        options: ["역정규화 (Denormalization)", "정규화 (Normalization)", "인덱싱 (Indexing)", "트랜잭션 (Transaction)"],
+                        answer: 1,
+                        category: "normalize",
+                        explanation: "정규화는 데이터의 일관성을 유지하고 중복을 없애기 위해 테이블을 잘게 쪼개는 구조화 과정입니다."
+                    },
+                    {
+                        q: "테이블의 모든 속성(컬럼) 값이 원자값(더 이상 쪼개질 수 없는 값)을 가지도록 하는 정규화 단계는?",
+                        options: ["제1정규형 (1NF)", "제2정규형 (2NF)", "제3정규형 (3NF)", "BCNF"],
+                        answer: 0,
+                        category: "1nf",
+                        explanation: "제1정규형(1NF)은 도메인이 원자값이어야 한다는 원칙입니다. 한 칸에 두 개 이상의 값이 쉼표로 나열되어 있으면 안 됩니다."
+                    },
+                    {
+                        q: "기본키의 일부분에만 종속되는 '부분 함수 종속성'을 제거하여, 모든 속성이 완전 함수 종속이 되도록 하는 단계는?",
+                        options: ["제1정규형 (1NF)", "제2정규형 (2NF)", "제3정규형 (3NF)", "BCNF"],
+                        answer: 1,
+                        category: "2nf",
+                        explanation: "제2정규형(2NF)은 기본키가 2개 이상의 컬럼(복합키)일 때, 기본키 전체가 아닌 일부에만 종속된 일반 컬럼을 다른 테이블로 분리하는 과정입니다."
+                    },
+                    {
+                        q: "기본키가 아닌 일반 속성들 간의 종속성(이행적 함수 종속)을 제거하는 정규화 단계는? (예: A->B, B->C 일 때 A->C)",
+                        options: ["제1정규형 (1NF)", "제2정규형 (2NF)", "제3정규형 (3NF)", "제4정규형 (4NF)"],
+                        answer: 2,
+                        category: "3nf",
+                        explanation: "제3정규형(3NF)은 이행적 함수 종속성을 제거합니다. 즉, 기본키가 아닌 컬럼이 다른 일반 컬럼을 결정하면 안 됩니다."
+                    },
+                    {
+                        q: "모든 결정자가 후보키가 되도록 하는 강력한 제3정규형이라고 불리는 정규화 단계는?",
+                        options: ["제1정규형 (1NF)", "제2정규형 (2NF)", "제3정규형 (3NF)", "BCNF"],
+                        answer: 3,
+                        category: "bcnf",
+                        explanation: "Boyce-Codd Normal Form(BCNF)은 모든 결정자가 후보키 집합에 속해야 한다는 원칙으로, 3NF의 이상 현상을 추가로 해결합니다."
+                    },
+                    {
+                        q: "조회 성능 향상을 위해 의도적으로 정규화 원칙을 위배하고 테이블을 통합하거나 중복 데이터를 허용하는 기법은?",
+                        options: ["슈퍼 정규화", "역정규화 (반정규화)", "클러스터링", "파티셔닝"],
+                        answer: 1,
+                        category: "denormalize",
+                        explanation: "역정규화(Denormalization)는 시스템의 성능 향상(특히 READ 성능)을 위해 정규화된 데이터 모델을 통합, 중복, 분리하는 과정입니다."
+                    },
+                    {
+                        q: "데이터베이스 물리적 설계 단계에서 성능을 위해 특정 컬럼의 검색 속도를 높일 목적으로 생성하는 객체는?",
+                        options: ["View (뷰)", "Trigger (트리거)", "Index (인덱스)", "Procedure (프로시저)"],
+                        answer: 2,
+                        category: "index_concept",
+                        explanation: "인덱스는 책의 '찾아보기(색인)'와 같이, 테이블의 검색 속도를 극적으로 향상시키기 위해 만드는 자료구조입니다."
+                    },
+                    {
+                        q: "물리적 설계 단계에서 각 컬럼에 저장될 데이터의 성격에 맞게 지정하는 것은 무엇인가? (예: INT, VARCHAR, DATE)",
+                        options: ["제약조건", "데이터 타입", "기본키", "외래키"],
+                        answer: 1,
+                        category: "datatype",
+                        explanation: "데이터 타입(Data Type)은 해당 컬럼이 문자, 숫자, 날짜 중 어떤 형태의 데이터를 얼마나 크게 저장할지 결정합니다. 공간 효율성과 관련이 깊습니다."
+                    }
+                ]
+            },
+            {
+                id: 4,
+                title: "4단계: 고급",
+                desc: "성능 최적화 및 운영",
+                color: "bg-red-100 text-red-600",
+                icon: "🚀",
+                questions: [
+                    {
+                        q: "대부분의 RDBMS에서 인덱스를 구현할 때 사용하는 대표적인 트리(Tree) 자료 구조는?",
+                        options: ["Binary Tree", "B-Tree (B+Tree)", "Red-Black Tree", "AVL Tree"],
+                        answer: 1,
+                        category: "btree",
+                        explanation: "RDBMS는 데이터베이스 인덱스를 구성할 때 디스크 I/O를 최소화하기 위해 자식이 2개 이상인 균형 트리인 B-Tree(또는 B+Tree)를 주로 사용합니다."
+                    },
+                    {
+                        q: "실행된 SQL 쿼리가 내부적으로 어떤 인덱스를 타고 어떻게 처리되는지 실행 계획을 확인할 때 사용하는 명령어는?",
+                        options: ["PLAN", "TRACE", "EXPLAIN", "ANALYZE"],
+                        answer: 2,
+                        category: "explain",
+                        explanation: "EXPLAIN(또는 EXPLAIN PLAN) 명령어를 쿼리 앞에 붙이면, 옵티마이저가 쿼리를 어떻게 실행할지(Table Scan, Index Scan 등) 계획을 보여줍니다."
+                    },
+                    {
+                        q: "데이터베이스의 상태를 변화시키는 논리적 작업 단위를 의미하며, 'All or Nothing'의 성격을 가지는 것은?",
+                        options: ["프로시저 (Procedure)", "트랜잭션 (Transaction)", "커밋 (Commit)", "세션 (Session)"],
+                        answer: 1,
+                        category: "transaction",
+                        explanation: "트랜잭션은 쪼갤 수 없는 하나의 작업 단위입니다. 은행 송금처럼 내 계좌 출금과 상대 계좌 입금이 모두 성공하거나 모두 실패해야 합니다."
+                    },
+                    {
+                        q: "트랜잭션의 4가지 속성(ACID) 중, 트랜잭션이 성공적으로 완료되면 그 결과가 영구적으로 반영되어야 한다는 속성은?",
+                        options: ["Atomicity (원자성)", "Consistency (일관성)", "Isolation (고립성)", "Durability (지속성)"],
+                        answer: 3,
+                        category: "acid_d",
+                        explanation: "Durability(지속성)는 시스템에 장애가 발생하더라도 성공한(Commit) 트랜잭션의 결과는 손실되지 않고 DB에 보존되어야 한다는 원칙입니다."
+                    },
+                    {
+                        q: "복수의 트랜잭션이 동시에 실행될 때, 서로의 연산에 영향을 주지 않도록 제어하는 트랜잭션의 격리 수준(Isolation Level) 중 가장 엄격한 것은?",
+                        options: ["READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE"],
+                        answer: 3,
+                        category: "isolation",
+                        explanation: "SERIALIZABLE은 트랜잭션들을 순차적으로 실행하는 것과 동일한 결과를 보장하는 가장 높은 수준의 격리 수준으로, 동시성이 가장 떨어집니다."
+                    },
+                    {
+                        q: "행과 행 간의 관계를 쉽게 정의하기 위해 사용하며, GROUP BY와 달리 결과 행의 개수가 줄어들지 않고 원본 데이터를 유지하면서 집계/순위를 구하는 함수는?",
+                        options: ["집계 함수", "스칼라 함수", "윈도우 함수 (Window Function)", "문자열 함수"],
+                        answer: 2,
+                        category: "window",
+                        explanation: "윈도우 함수(예: RANK(), ROW_NUMBER() OVER (...))는 특정 윈도우(범위) 내에서 집계, 순위 연산을 수행하며 원본 레코드를 그대로 출력합니다."
+                    },
+                    {
+                        q: "복잡한 쿼리를 작성할 때 가독성을 높이기 위해 'WITH' 구문을 사용하여 임시로 결과를 저장해두는 것을 무엇이라 하는가?",
+                        options: ["CTE (Common Table Expression)", "임시 테이블 (Temp Table)", "서브쿼리 (Subquery)", "인라인 뷰 (Inline View)"],
+                        answer: 0,
+                        category: "cte",
+                        explanation: "CTE는 WITH 절을 사용하여 쿼리 내에서 재사용 가능한 임시 결과 집합을 정의하는 고급 SQL 문법입니다."
+                    },
+                    {
+                        q: "장애 대비를 위해 데이터베이스 서버를 Master(주)와 Slave(보조)로 나누어 데이터를 실시간으로 복사하는 운영 기법은?",
+                        options: ["파티셔닝 (Partitioning)", "샤딩 (Sharding)", "레플리케이션 (Replication)", "클러스터링 (Clustering)"],
+                        answer: 2,
+                        category: "replication",
+                        explanation: "레플리케이션(Replication)은 Master 노드에서 발생한 변경사항(트랜잭션 로그)을 하나 이상의 Slave 노드에 비동기/동기적으로 복제하여 가용성을 높이고 부하를 분산합니다."
+                    },
+                    {
+                        q: "데이터베이스 테이블이 너무 커져서 관리나 성능 향상을 위해 여러 개의 물리적인 공간으로 분할하는 기법은?",
+                        options: ["미러링 (Mirroring)", "파티셔닝 (Partitioning)", "인덱싱 (Indexing)", "조인 (Join)"],
+                        answer: 1,
+                        category: "partitioning",
+                        explanation: "파티셔닝은 하나의 큰 테이블을 논리적으로는 유지하되 물리적으로는 분할(예: 날짜별, 지역별)하여 I/O 성능과 관리 편의성을 높이는 기법입니다."
+                    },
+                    {
+                        q: "DB에 심각한 장애가 발생하여 데이터를 복구해야 할 때, 마지막 백업 시점 이후의 변경 내역을 재실행(Redo)하기 위해 반드시 필요한 파일은?",
+                        options: ["데이터 파일 (Data File)", "컨트롤 파일 (Control File)", "트랜잭션 로그 (Transaction Log / Redo Log)", "환경설정 파일 (Config File)"],
+                        answer: 2,
+                        category: "redolog",
+                        explanation: "트랜잭션 로그(Redo Log, WAL 등)에는 데이터 변경 이력이 모두 순차적으로 기록되어 있어, 시스템 크래시 발생 시 이를 기반으로 복구를 수행합니다."
+                    }
+                ]
+            }
+        ];
+
+        // --- 2. State Management ---
+        let currentStageIndex = 0; // 0~3
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let unlockedStages = [0]; // Index of unlocked stages. Initially only stage 0 is unlocked.
+
+        // --- 3. DOM Elements ---
+        const screens = {
+            map: document.getElementById('screen-map'),
+            quiz: document.getElementById('screen-quiz'),
+            result: document.getElementById('screen-result'),
+            badge: document.getElementById('screen-badge')
+        };
+        const explanationModal = document.getElementById('explanation-modal');
+
+        // --- 4. Initialization & Map Render ---
+        function initApp() {
+            renderMap();
+            updateOverallProgress();
+        }
+
+        function renderMap() {
+            const container = document.getElementById('islands-container');
+            container.innerHTML = '';
+            
+            // Draw path based on progress
+            const maxUnlocked = Math.max(...unlockedStages);
+            const pathProgress = (maxUnlocked / (stagesData.length - 1)) * 100;
+            // 1000 is the stroke-dasharray. Offset goes from 1000 to 0.
+            const offset = 1000 - (1000 * (pathProgress / 100));
+            document.getElementById('map-path-active').style.strokeDashoffset = offset;
+
+            stagesData.forEach((stage, index) => {
+                const isUnlocked = unlockedStages.includes(index);
+                const isCurrent = index === maxUnlocked;
+                
+                const btn = document.createElement('div');
+                btn.className = `relative flex flex-col items-center justify-center cursor-pointer transition-transform duration-300 hover:scale-105 ${!isUnlocked ? 'island-locked pointer-events-none' : ''}`;
+                
+                // Position nodes alternating left/right (zig-zag)
+                const alignLeft = index % 2 === 0;
+                btn.style.alignSelf = alignLeft ? 'flex-start' : 'flex-end';
+                btn.style.margin = alignLeft ? '0 10% 20px 20%' : '0 20% 20px 10%';
+                
+                if (isCurrent) {
+                    btn.classList.add('animate-pop-in');
+                }
+
+                // Node Circle
+                const circle = document.createElement('div');
+                circle.className = `w-20 h-20 rounded-full flex items-center justify-center text-3xl shadow-lg bg-white relative z-10 ${isCurrent ? 'island-active' : 'border-4 border-gray-200'}`;
+                circle.innerHTML = stage.icon;
+                
+                // Flag for first stage or current stage highlight
+                if (isCurrent) {
+                    const flag = document.createElement('div');
+                    flag.className = 'absolute -top-4 -right-2 text-2xl animate-bounce';
+                    flag.innerHTML = '🚩';
+                    circle.appendChild(flag);
+                }
+
+                // Label
+                const label = document.createElement('div');
+                label.className = `mt-3 px-4 py-1.5 rounded-full font-bold text-sm text-center shadow-sm ${isUnlocked ? stage.color : 'bg-gray-200 text-gray-500'}`;
+                label.innerHTML = `<div>${stage.title}</div><div class="text-[10px] font-normal opacity-80 mt-0.5">${stage.desc}</div>`;
+
+                btn.appendChild(circle);
+                btn.appendChild(label);
+
+                // Event
+                if (isUnlocked) {
+                    btn.onclick = () => openQuiz(index);
+                }
+
+                container.appendChild(btn);
+            });
+        }
+
+        function updateOverallProgress() {
+            const percentage = Math.round((Math.max(...unlockedStages) / 4) * 100);
+            document.getElementById('progress-bar-overall').style.width = `${percentage}%`;
+            document.getElementById('progress-text').innerText = `${percentage}%`;
+        }
+
+        // --- 5. Navigation ---
+        function switchScreen(screenName) {
+            Object.values(screens).forEach(s => s.classList.add('hidden'));
+            screens[screenName].classList.remove('hidden');
+            if(screenName === 'map') renderMap();
+        }
+
+        function returnToMap() {
+            switchScreen('map');
+            updateOverallProgress();
+        }
+
+        // --- 6. Quiz Logic ---
+        function openQuiz(stageIndex) {
+            currentStageIndex = stageIndex;
+            currentQuestionIndex = 0;
+            score = 0;
+            document.getElementById('quiz-stage-title').innerText = stagesData[stageIndex].title;
+            switchScreen('quiz');
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            const stage = stagesData[currentStageIndex];
+            const qData = stage.questions[currentQuestionIndex];
+            
+            // Update Progress UI
+            document.getElementById('quiz-progress-text').innerText = `문제 ${currentQuestionIndex + 1} / 10`;
+            document.getElementById('quiz-score-text').innerText = `맞춘 개수: ${score}`;
+            document.getElementById('quiz-progress-bar').style.width = `${((currentQuestionIndex) / 10) * 100}%`;
+            
+            // Render Question
+            document.getElementById('question-text').innerText = qData.q;
+            
+            // Render Options
+            const optionsContainer = document.getElementById('options-container');
+            optionsContainer.innerHTML = '';
+            
+            qData.options.forEach((optText, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'option-btn w-full text-left p-4 rounded-xl border-2 border-[#E5E8EB] bg-white font-medium text-[#333D4B] hover:bg-gray-50 break-keep leading-snug flex items-start';
+                
+                const numBox = document.createElement('div');
+                numBox.className = 'w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 mr-3 flex-shrink-0 mt-0.5';
+                numBox.innerText = idx + 1;
+                
+                const textSpan = document.createElement('span');
+                textSpan.innerText = optText;
+
+                btn.appendChild(numBox);
+                btn.appendChild(textSpan);
+                
+                btn.onclick = () => selectAnswer(idx, btn);
+                optionsContainer.appendChild(btn);
+            });
+        }
+
+        function selectAnswer(selectedIndex, btnElement) {
+            // Disable all buttons temporarily
+            const buttons = document.querySelectorAll('.option-btn');
+            buttons.forEach(b => b.style.pointerEvents = 'none');
+
+            const stage = stagesData[currentStageIndex];
+            const qData = stage.questions[currentQuestionIndex];
+            const isCorrect = selectedIndex === qData.answer;
+
+            btnElement.classList.add('selected');
+
+            setTimeout(() => {
+                btnElement.classList.remove('selected');
+                if (isCorrect) {
+                    btnElement.classList.add('correct');
+                    score++;
+                    document.getElementById('quiz-score-text').innerText = `맞춘 개수: ${score}`;
+                    setTimeout(() => showExplanation(qData), 500); // Show infographic
+                } else {
+                    btnElement.classList.add('wrong');
+                    buttons[qData.answer].classList.add('correct'); // Show correct answer
+                    setTimeout(() => nextQuestion(), 1200); // Move on automatically if wrong
+                }
+            }, 300);
+        }
+
+        function nextQuestion() {
+            explanationModal.classList.add('hidden');
+            
+            currentQuestionIndex++;
+            if (currentQuestionIndex < 10) {
+                loadQuestion();
+            } else {
+                finishQuiz();
+            }
+        }
+
+        // --- 7. Infographic Generation (Simulated Gemini AI Visualizer) ---
+        function showExplanation(qData) {
+            document.getElementById('exp-text').innerText = qData.explanation;
+            
+            const visualContainer = document.getElementById('infographic-container');
+            visualContainer.innerHTML = getVisualForCategory(qData.category);
+
+            explanationModal.classList.remove('hidden');
+            explanationModal.classList.add('flex');
+        }
+
+        // AI Visualizer Helper
+        function getVisualForCategory(category) {
+            // Simple CSS/SVG based visualizations simulating AI generated infographics
+            const svgIcon = (path, color="#3182F6") => `<svg class="w-16 h-16 text-[${color}]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="${path}"></path></svg>`;
+
+            if (category.includes('join')) {
+                return `
+                <div class="relative w-40 h-24 flex items-center justify-center">
+                    <div class="venn-circle bg-blue-400 left-2"></div>
+                    <div class="venn-circle bg-green-400 right-2"></div>
+                    <div class="absolute font-bold text-white text-sm z-10" style="${category === 'innerjoin' ? 'left:50%; transform:translateX(-50%); color:black;' : (category === 'leftjoin' ? 'left:25%' : '')}">${category === 'innerjoin' ? '교집합' : (category==='leftjoin' ? 'A 전체' : 'JOIN')}</div>
+                </div>`;
+            } else if (category.includes('select') || category.includes('orderby') || category.includes('groupby')) {
+                 return `
+                 <div class="flex flex-col gap-1 w-48">
+                    <div class="flex gap-1"><div class="h-6 w-full bg-blue-500 rounded-t-md opacity-20"></div></div>
+                    <div class="flex gap-1">
+                        <div class="h-4 w-1/3 bg-blue-400 rounded-sm"></div>
+                        <div class="h-4 w-2/3 bg-gray-300 rounded-sm"></div>
+                    </div>
+                    <div class="flex gap-1">
+                        <div class="h-4 w-1/3 bg-blue-400 rounded-sm"></div>
+                        <div class="h-4 w-2/3 bg-gray-300 rounded-sm"></div>
+                    </div>
+                    <div class="text-xs text-center mt-2 font-bold text-gray-500">데이터 필터링 및 추출</div>
+                 </div>`;
+            } else if (category.includes('normalize') || category.includes('nf')) {
+                return `
+                <div class="flex items-center gap-2">
+                    <div class="w-16 h-20 bg-gray-200 border-2 border-dashed border-gray-400 rounded-md flex items-center justify-center text-xs font-bold">큰 테이블</div>
+                    <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                    <div class="flex flex-col gap-2">
+                        <div class="w-16 h-8 bg-blue-100 border border-blue-300 rounded-sm flex items-center justify-center text-[10px]">테이블 A</div>
+                        <div class="w-16 h-8 bg-green-100 border border-green-300 rounded-sm flex items-center justify-center text-[10px]">테이블 B</div>
+                    </div>
+                </div>`;
+            } else if (category.includes('btree') || category.includes('index')) {
+                return `
+                <div class="flex flex-col items-center">
+                    <div class="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs mb-2">Root</div>
+                    <div class="flex gap-4">
+                        <div class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs">A-M</div>
+                        <div class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs">N-Z</div>
+                    </div>
+                    <div class="text-xs mt-3 text-gray-500">B-Tree 빠른 검색</div>
+                </div>`;
+            } else if (category.includes('erd') || category.includes('pk') || category.includes('fk')) {
+                 return `
+                 <div class="flex items-center gap-4">
+                    <div class="px-3 py-2 border-2 border-blue-500 bg-white rounded-md text-sm font-bold shadow-sm">User</div>
+                    <div class="h-0.5 w-6 bg-gray-400 relative"><div class="absolute -right-1 -top-1 w-2 h-2 rounded-full bg-gray-400"></div></div>
+                    <div class="px-3 py-2 border-2 border-green-500 bg-white rounded-md text-sm font-bold shadow-sm">Order</div>
+                 </div>`;
+            } else if (category.includes('transaction') || category.includes('acid')) {
+                return `
+                <div class="flex items-center gap-4 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                    <div class="text-center"><div class="text-xl">💰</div><div class="text-xs mt-1">출금 (O)</div></div>
+                    <div class="text-xl text-green-500 font-bold">ALL</div>
+                    <div class="text-center"><div class="text-xl">🏦</div><div class="text-xs mt-1">입금 (O)</div></div>
+                </div>
+                <div class="text-xs mt-2 text-center text-gray-500">하나라도 실패하면 모두 롤백(None)</div>
+                `;
+            } else {
+                // Default DB Icon
+                return `
+                <div class="text-center">
+                    <svg class="w-16 h-16 mx-auto text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+                    <div class="text-sm font-bold mt-2 text-gray-600">DB Concept</div>
+                </div>`;
+            }
+        }
+
+        // --- 8. Results & Progress ---
+        function finishQuiz() {
+            switchScreen('result');
+            document.getElementById('result-score').innerHTML = `${score}<span class="text-2xl text-gray-400">/10</span>`;
+            
+            const title = document.getElementById('result-title');
+            const desc = document.getElementById('result-desc');
+            const icon = document.getElementById('result-icon');
+            const btn = document.getElementById('result-btn');
+
+            if (score >= 8) {
+                // Success
+                icon.innerText = "🎉";
+                title.innerText = "클리어 성공!";
+                title.className = "text-3xl font-extrabold text-[#191F28] mb-2";
+                
+                if (currentStageIndex === 3) {
+                    desc.innerText = "축하합니다! 모든 관문을 통과했습니다.";
+                    btn.innerText = "최종 배지 확인하기";
+                    btn.onclick = showBadge;
+                } else {
+                    desc.innerText = "훌륭합니다! 다음 섬이 열렸습니다.";
+                    btn.innerText = "다음 섬으로 가기";
+                    btn.onclick = returnToMap;
+                    // Unlock next
+                    if (!unlockedStages.includes(currentStageIndex + 1)) {
+                        unlockedStages.push(currentStageIndex + 1);
+                    }
+                }
+            } else {
+                // Fail
+                icon.innerText = "💪";
+                title.innerText = "아쉽네요!";
+                title.className = "text-3xl font-extrabold text-red-500 mb-2";
+                desc.innerText = "8개 이상 맞혀야 다음 섬으로 갈 수 있어요.";
+                btn.innerText = "다시 도전하기";
+                btn.onclick = returnToMap;
+            }
+        }
+
+        function showBadge() {
+            switchScreen('badge');
+        }
+
+        function resetGame() {
+            unlockedStages = [0];
+            returnToMap();
+        }
+
+        // Initialize on load
+        window.onload = initApp;
+
+    </script>
+</body>
+</html>
