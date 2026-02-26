@@ -3,7 +3,7 @@
 마이 홈쉐프 - 냉장고를 부탁해!
 
 ### 배포 링크
-https://gemini.google.com/share/c417679cd9f2
+https://gemini.google.com/share/550c035f7adf
 
 ### 이 앱을 만든 이유
 - 어떤 문제/불편함을 해결하려고 했나요?
