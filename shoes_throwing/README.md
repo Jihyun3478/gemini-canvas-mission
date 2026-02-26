@@ -1,9 +1,9 @@
 ## 🎮 게임
 ### 앱 이름
-행성이 신발 던지기
+### **행성이 신발 던지기**
 
 ### 배포 링크
-https://gemini.google.com/share/af97c468b092
+[행성이 신발 던지기 바로가기!](https://gemini.google.com/share/af97c468b092)
 
 ### 이 앱을 만든 이유
 - 어떤 문제/불편함을 해결하려고 했나요?
