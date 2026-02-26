@@ -3,7 +3,7 @@
 DB 마스터
 
 ### 배포 링크
-https://gemini.google.com/share/b1f26b950637
+https://gemini.google.com/share/c68ad482417a
 
 ### 이 앱을 만든 이유
 - 어떤 문제/불편함을 해결하려고 했나요?
